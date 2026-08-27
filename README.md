@@ -50,6 +50,22 @@ See [SECURITY.md](SECURITY.md) for credential handling and vulnerability reporti
 - Return an auditable primary pick, alternatives, exclusions, and confidence score.
 - Maintain an explicit family or friends team boundary on every draft request.
 
+## Bridge Mode dashboard
+
+The private browser dashboard in `dashboard/` provides a draft-day control center while Yahoo access remains read-only. It includes:
+
+- distinct navy-and-gold Family League and purple-and-green Friends League identities;
+- an interactive draft board with fictional demo players;
+- live recommendation recalculation after every recorded pick;
+- one-click Agent selections when the team is on the clock;
+- isolated, device-local draft state and rosters for both leagues;
+- undo, reset, roster, and audit-log views; and
+- staged lineup and waiver modules ready for the league-data connection phase.
+
+The demo player names and projections are intentionally fictional. They must be replaced with a current, league-scoring-specific data source before a real draft.
+
+To run the dashboard locally, open the `dashboard` directory, install its declared dependencies, and run its `dev` script. The app remains on the local device and does not need to be publicly hosted.
+
 Run the included demonstration after installation:
 
 ```text
