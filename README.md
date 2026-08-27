@@ -52,19 +52,21 @@ See [SECURITY.md](SECURITY.md) for credential handling and vulnerability reporti
 
 ## Bridge Mode dashboard
 
-The private browser dashboard in `dashboard/` provides a draft-day control center while Yahoo access remains read-only. It includes:
+The private production dashboard is available at [agent-of-chaos-fantasy-manager.arielle-elizabeth3.chatgpt.site](https://agent-of-chaos-fantasy-manager.arielle-elizabeth3.chatgpt.site). It provides a draft-day control center while Yahoo access remains read-only. It includes:
 
 - distinct navy-and-gold Family League and purple-and-green Friends League identities;
 - an interactive draft board with fictional demo players;
 - live recommendation recalculation after every recorded pick;
 - one-click Agent selections when the team is on the clock;
-- isolated, device-local draft state and rosters for both leagues;
+- private cloud-synced draft state and rosters for both leagues;
 - undo, reset, roster, and audit-log views; and
-- staged lineup and waiver modules ready for the league-data connection phase.
+- server-side Yahoo OAuth token protection, league configuration, automation guardrails, and staged lineup and waiver modules;
+- installable Progressive Web App support for phone home screens; and
+- owner-only access through Sites.
 
 The demo player names and projections are intentionally fictional. They must be replaced with a current, league-scoring-specific data source before a real draft.
 
-To run the dashboard locally, open the `dashboard` directory, install its declared dependencies, and run its `dev` script. The app remains on the local device and does not need to be publicly hosted.
+To run the dashboard locally, open the `dashboard` directory, install its declared dependencies, and run its `dev` script. Local development uses a project-scoped D1 database and never needs production secrets.
 
 Run the included demonstration after installation:
 

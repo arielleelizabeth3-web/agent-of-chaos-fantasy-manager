@@ -13,7 +13,26 @@ import {
 } from './lib/draft';
 
 type Team = 'family' | 'friends';
-type View = 'draft' | 'roster' | 'lineups' | 'waivers' | 'audit';
+type View = 'draft' | 'roster' | 'lineups' | 'waivers' | 'audit' | 'settings';
+type SyncStatus = 'loading' | 'saving' | 'synced' | 'local' | 'error';
+
+type TeamSettings = {
+  leagueId: string;
+  yahooTeamKey: string;
+  lineupReview: boolean;
+  waiverWatch: boolean;
+  weeklyReport: boolean;
+};
+
+type YahooStatus = {
+  configured: boolean;
+  connected: boolean;
+  callbackUrl: string;
+  accessMode: string;
+};
+
+type StatePayload = { drafts?: Record<Team, DraftState>; user?: { displayName?: string; email?: string } };
+type SettingsPayload = { settings?: Record<Team, TeamSettings> };
 
 const teamDetails = {
   family: { label: 'Family League', shortLabel: 'Family', logo: '/agent-of-chaos-family.webp', format: 'Demo · 12-team half-PPR' },
@@ -26,9 +45,14 @@ const navItems: Array<{ view: View; icon: string; label: string }> = [
   { view: 'lineups', icon: 'L', label: 'Lineups' },
   { view: 'waivers', icon: 'W', label: 'Waivers' },
   { view: 'audit', icon: 'A', label: 'Audit log' },
+  { view: 'settings', icon: 'S', label: 'Production setup' },
 ];
 
 const initialDrafts: Record<Team, DraftState> = { family: newDraftState(), friends: newDraftState() };
+const initialSettings: Record<Team, TeamSettings> = {
+  family: { leagueId: '', yahooTeamKey: '', lineupReview: true, waiverWatch: true, weeklyReport: true },
+  friends: { leagueId: '', yahooTeamKey: '', lineupReview: true, waiverWatch: true, weeklyReport: true },
+};
 
 export default function Home() {
   const [team, setTeam] = useState<Team>('family');
@@ -40,6 +64,11 @@ export default function Home() {
   const [seconds, setSeconds] = useState(77);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading');
+  const [cloudSyncEnabled, setCloudSyncEnabled] = useState(true);
+  const [settings, setSettings] = useState(initialSettings);
+  const [yahooStatus, setYahooStatus] = useState<YahooStatus | null>(null);
+  const [userName, setUserName] = useState('Private manager');
 
   const activeTeam = teamDetails[team];
   const draft = drafts[team];
@@ -52,22 +81,55 @@ export default function Home() {
   const availablePlayers = DEMO_PLAYERS.filter((player) => !draft.history.some((item) => item.playerKey === player.key));
 
   useEffect(() => {
-    const restore = window.setTimeout(() => {
+    const controller = new AbortController();
+    void Promise.all([
+      fetch('/api/state', { signal: controller.signal }).then((response) => {
+        if (!response.ok) throw new Error('State service unavailable');
+        return response.json() as Promise<StatePayload>;
+      }),
+      fetch('/api/settings', { signal: controller.signal }).then((response) => response.json() as Promise<SettingsPayload>),
+      fetch('/api/yahoo/status', { signal: controller.signal }).then((response) => response.json() as Promise<YahooStatus>),
+    ]).then(([stateData, settingsData, yahooData]) => {
+      setDrafts(stateData.drafts ?? initialDrafts);
+      setSettings(settingsData.settings ?? initialSettings);
+      setYahooStatus(yahooData);
+      setUserName(stateData.user?.displayName ?? stateData.user?.email ?? 'Private manager');
+      setSyncStatus('synced');
+    }).catch(() => {
       try {
         const saved = localStorage.getItem('agent-of-chaos-draft-state');
         if (saved) setDrafts(JSON.parse(saved));
-      } catch {
-        setNotice('Saved draft state could not be loaded. Starting with the demo board.');
-      } finally {
-        setLoaded(true);
-      }
+      } catch { /* Keep safe demo defaults. */ }
+      setSyncStatus('local');
+      setCloudSyncEnabled(false);
+      setNotice('Cloud sync is unavailable in this preview. A local backup is active.');
+    }).finally(() => setLoaded(true));
+
+    const connection = new URLSearchParams(window.location.search).get('connection');
+    const connectionNotice = window.setTimeout(() => {
+      if (connection === 'connected') setNotice('Yahoo account connected securely.');
+      if (connection === 'needs-credentials') setNotice('Yahoo credentials still need to be added to production.');
+      if (connection && !['connected', 'needs-credentials'].includes(connection)) setNotice('Yahoo connection was not completed. Try again from Production Setup.');
     }, 0);
-    return () => window.clearTimeout(restore);
+    return () => { controller.abort(); window.clearTimeout(connectionNotice); };
   }, []);
 
   useEffect(() => {
-    if (loaded) localStorage.setItem('agent-of-chaos-draft-state', JSON.stringify(drafts));
-  }, [drafts, loaded]);
+    if (!loaded) return;
+    localStorage.setItem('agent-of-chaos-draft-state', JSON.stringify(drafts));
+    if (!cloudSyncEnabled) return;
+    const timer = window.setTimeout(() => {
+      setSyncStatus('saving');
+      void Promise.all((['family', 'friends'] as Team[]).map((draftTeam) => fetch('/api/state', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team: draftTeam, draft: drafts[draftTeam] }),
+      }).then((response) => { if (!response.ok) throw new Error('Save failed'); })))
+        .then(() => setSyncStatus('synced'))
+        .catch(() => setSyncStatus('error'));
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [drafts, loaded, cloudSyncEnabled]);
 
   useEffect(() => {
     if (!onClock) return;
@@ -138,6 +200,25 @@ export default function Home() {
     setNotice('Demo draft reset.');
   }
 
+  function updateTeamSettings(patch: Partial<TeamSettings>) {
+    setSettings((current) => ({ ...current, [team]: { ...current[team], ...patch } }));
+  }
+
+  async function saveTeamSettings() {
+    setNotice('Saving production settings…');
+    try {
+      const response = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team, settings: settings[team] }),
+      });
+      if (!response.ok) throw new Error('Save failed');
+      setNotice(`${activeTeam.label} settings saved securely.`);
+    } catch {
+      setNotice('Settings could not be saved. Try again after cloud sync is available.');
+    }
+  }
+
   const clockText = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
   const positionRun = board.slice(0, 10).filter((player) => player.position === recommendation?.position).length;
 
@@ -150,7 +231,7 @@ export default function Home() {
           <div><p className="eyebrow">Fantasy command center</p><h1>Agent of Chaos</h1></div>
         </div>
         <div className="topbar-actions">
-          <div className="connection-pill"><span className="pulse-dot" />Bridge mode</div>
+          <div className={`connection-pill sync-${syncStatus}`}><span className="pulse-dot" />{syncLabel(syncStatus)}</div>
           <button className="team-switcher" type="button" onClick={() => setTeam(team === 'family' ? 'friends' : 'family')}>
             <span>{activeTeam.shortLabel}</span><span aria-hidden="true">⇄</span>
           </button>
@@ -171,7 +252,7 @@ export default function Home() {
               </button>
             ))}
           </nav>
-          <div className="sidebar-foot"><span className="status-light" /><div><strong>Decision engine ready</strong><span>Yahoo actions are manual</span></div></div>
+          <div className="sidebar-foot"><span className="status-light" /><div><strong>Decision engine ready</strong><span>{userName} · Yahoo read-only</span></div></div>
         </aside>
 
         {view === 'draft' && (
@@ -232,8 +313,12 @@ export default function Home() {
 
         {view === 'roster' && <RosterView roster={roster} teamName={activeTeam.label} />}
         {view === 'audit' && <AuditView draft={draft} />}
+        {view === 'settings' && <SettingsView teamName={activeTeam.label} values={settings[team]} yahoo={yahooStatus} onChange={updateTeamSettings} onSave={saveTeamSettings} />}
         {(view === 'lineups' || view === 'waivers') && <ComingSoonView view={view} />}
       </div>
+      <nav className="mobile-nav" aria-label="Manager sections">
+        {navItems.map((item) => <button key={item.view} type="button" className={view === item.view ? 'active' : ''} onClick={() => setView(item.view)}><span>{item.icon}</span>{item.label}</button>)}
+      </nav>
     </main>
   );
 }
@@ -243,7 +328,55 @@ function RosterView({ roster, teamName }: { roster: Array<(typeof DEMO_PLAYERS)[
 }
 
 function AuditView({ draft }: { draft: DraftState }) {
-  return <section className="module-page"><p className="eyebrow accent-text">Decision history</p><h2>Audit log</h2><p className="module-subtitle">Every recorded action is saved on this device for a clear draft-day record.</p><div className="audit-list">{draft.history.length ? [...draft.history].reverse().map((item) => { const player = DEMO_PLAYERS.find((candidate) => candidate.key === item.playerKey); return <article key={`${item.pick}-${item.playerKey}`}><span>Pick {item.pick}</span><div><b>{player?.name}</b><small>{player?.position} · {item.manager === 'agent' ? 'Agent of Chaos' : 'League manager'}</small></div><em>{item.manager === 'agent' ? 'Agent pick' : 'Board update'}</em></article>; }) : <div className="empty-state"><span>A</span><h3>No decisions recorded</h3><p>The log will populate as the draft progresses.</p></div>}</div></section>;
+  return <section className="module-page"><p className="eyebrow accent-text">Decision history</p><h2>Audit log</h2><p className="module-subtitle">Every recorded action is saved to your private command center and available across devices.</p><div className="audit-list">{draft.history.length ? [...draft.history].reverse().map((item) => { const player = DEMO_PLAYERS.find((candidate) => candidate.key === item.playerKey); return <article key={`${item.pick}-${item.playerKey}`}><span>Pick {item.pick}</span><div><b>{player?.name}</b><small>{player?.position} · {item.manager === 'agent' ? 'Agent of Chaos' : 'League manager'}</small></div><em>{item.manager === 'agent' ? 'Agent pick' : 'Board update'}</em></article>; }) : <div className="empty-state"><span>A</span><h3>No decisions recorded</h3><p>The log will populate as the draft progresses.</p></div>}</div></section>;
+}
+
+function SettingsView({ teamName, values, yahoo, onChange, onSave }: {
+  teamName: string;
+  values: TeamSettings;
+  yahoo: YahooStatus | null;
+  onChange: (patch: Partial<TeamSettings>) => void;
+  onSave: () => void;
+}) {
+  const callback = yahoo?.callbackUrl ?? 'Available after the production service starts';
+  return <section className="module-page settings-page">
+    <p className="eyebrow accent-text">Production foundation</p><h2>Connect {teamName}</h2>
+    <p className="module-subtitle">Private cloud sync is active. Finish the league identifiers and Yahoo connection when access is approved.</p>
+    <div className="setup-grid">
+      <article className="setup-card connection-setup">
+        <div className="setup-card-heading"><span className={yahoo?.connected ? 'setup-status ready' : 'setup-status'}>{yahoo?.connected ? 'Connected' : yahoo?.configured ? 'Ready to connect' : 'Needs credentials'}</span><h3>Yahoo Fantasy</h3><p>OAuth credentials stay on the server. They are never stored in your browser or source code.</p></div>
+        <label>Production callback URL<input value={callback} readOnly /></label>
+        <div className="setup-actions"><button type="button" className="primary-action" disabled={!yahoo?.configured || Boolean(yahoo?.connected)} onClick={() => { window.location.href = '/api/yahoo/connect'; }}>{yahoo?.connected ? 'Yahoo connected' : 'Connect Yahoo account'}</button><button type="button" className="secondary-action" onClick={() => navigator.clipboard?.writeText(callback)}>Copy callback</button></div>
+        <small className="legal-note">Fantasy data provided by <a href="https://sports.yahoo.com/fantasy/" target="_blank" rel="noreferrer">Yahoo Fantasy</a>. Current API access is read-only; roster changes remain in Bridge Mode.</small>
+      </article>
+      <article className="setup-card">
+        <div className="setup-card-heading"><span className="setup-status ready">Cloud saved</span><h3>League mapping</h3><p>These values tell Agent of Chaos which league and team belong to this identity.</p></div>
+        <label>Yahoo league ID<input value={values.leagueId} onChange={(event) => onChange({ leagueId: event.target.value })} placeholder="Example: 123456" /></label>
+        <label>Yahoo team key<input value={values.yahooTeamKey} onChange={(event) => onChange({ yahooTeamKey: event.target.value })} placeholder="Example: 449.l.123456.t.10" /></label>
+        <button type="button" className="primary-action" onClick={onSave}>Save league settings</button>
+      </article>
+      <article className="setup-card automation-card">
+        <div className="setup-card-heading"><span className="setup-status staged">Dry-run policy</span><h3>Automation guardrails</h3><p>Choose what the agent should monitor. Execution stays review-only until Yahoo write access exists.</p></div>
+        <Toggle label="Daily lineup review" detail="Check injuries, byes, matchups, and locked players." checked={values.lineupReview} onChange={(checked) => onChange({ lineupReview: checked })} />
+        <Toggle label="Waiver watch" detail="Rank adds, drops, and suggested FAAB bids." checked={values.waiverWatch} onChange={(checked) => onChange({ waiverWatch: checked })} />
+        <Toggle label="Weekly decision report" detail="Keep an auditable summary for each league." checked={values.weeklyReport} onChange={(checked) => onChange({ weeklyReport: checked })} />
+        <button type="button" className="primary-action" onClick={onSave}>Save automation policy</button>
+      </article>
+      <article className="setup-card install-card"><div className="setup-card-heading"><span className="setup-status ready">Phone ready</span><h3>Add to your home screen</h3><p>Open the published app in Safari or Chrome, use the Share menu, and choose Add to Home Screen. It will launch like a standalone app.</p></div><div className="install-preview"><Image src="/agent-of-chaos-family.webp" alt="Agent of Chaos app icon" width={64} height={64} unoptimized /><div><strong>Agent of Chaos</strong><span>Private fantasy command center</span></div></div></article>
+    </div>
+  </section>;
+}
+
+function Toggle({ label, detail, checked, onChange }: { label: string; detail: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return <label className="toggle-row"><div><strong>{label}</strong><span>{detail}</span></div><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /><i aria-hidden="true" /></label>;
+}
+
+function syncLabel(status: SyncStatus) {
+  if (status === 'saving') return 'Saving…';
+  if (status === 'synced') return 'Cloud synced';
+  if (status === 'local') return 'Local preview';
+  if (status === 'error') return 'Sync needs attention';
+  return 'Connecting…';
 }
 
 function ComingSoonView({ view }: { view: 'lineups' | 'waivers' }) {
