@@ -1,7 +1,7 @@
 [project]
-name = "gridiron-agent"
+name = "agent-of-chaos-fantasy-manager"
 version = "0.1.0"
-description = "An auditable AI manager for a Yahoo Fantasy Football team"
+description = "An auditable AI manager for two isolated Yahoo Fantasy Football teams"
 requires-python = ">=3.11"
 dependencies = [
   "httpx>=0.27",
@@ -16,6 +16,7 @@ dev = ["pytest>=8.3"]
 
 [project.scripts]
 gridiron = "fantasy_agent.cli:app"
+agent-of-chaos = "fantasy_agent.cli:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -26,5 +27,3 @@ packages = ["fantasy_agent"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-

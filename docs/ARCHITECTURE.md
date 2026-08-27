@@ -43,6 +43,23 @@ The project remains in `dry_run` while Yahoo write access is unavailable.
 
 ## Draft workflow
 
-The first draft implementation is a companion rather than unattended browser automation. It tracks available players, roster construction, positional scarcity, and the draft timer; the agent selects the preferred player, and a human enters the pick in Yahoo.
+The first draft implementation is a deterministic, auditable companion rather than unattended browser automation:
 
+```text
+League-specific projections + ADP + player traits
+                         |
+                         v
+Validated draft state and isolated team profile
+                         |
+                         v
+Replacement value + need + scarcity + survival + risk scoring
+                         |
+                         v
+Primary pick + alternatives + exclusions + confidence
+```
 
+The engine in `fantasy_agent/draft.py` does not require an LLM or a Yahoo write connection. This makes mock-draft testing repeatable and lets the football logic mature while access remains read-only. The live integration will refresh the available-player list after every selection and pass the selected team profile's state to the engine.
+
+Player projections supplied to the engine must already reflect the league's scoring rules. The engine then adjusts their relative value using the league's roster slots and team count. The input schema requires a data-version label so live recommendations can be traced to a particular projection and news snapshot.
+
+The strategy principles and phase behavior are defined in `docs/STRATEGY_CONSTITUTION.md`.

@@ -1,0 +1,72 @@
+{
+  "settings": {
+    "league_id": "replace-with-yahoo-league-key",
+    "team_count": 12,
+    "roster_slots": {
+      "QB": 1,
+      "RB": 2,
+      "WR": 2,
+      "TE": 1,
+      "FLEX": 1,
+      "K": 1,
+      "DEF": 1,
+      "BN": 6
+    },
+    "scoring_format": "half_ppr"
+  },
+  "state": {
+    "team_profile": "family",
+    "current_pick": 15,
+    "round_number": 2,
+    "my_next_pick": 34,
+    "my_roster": [],
+    "available_players": [
+      {
+        "player_key": "demo.rb.1",
+        "name": "Example Running Back",
+        "positions": ["RB"],
+        "nfl_team": "EX1",
+        "bye_week": 8,
+        "projected_points": 250,
+        "adp": 13.2,
+        "tier": 1,
+        "floor_score": 0.8,
+        "ceiling_score": 0.9,
+        "risk_score": 0.2
+      },
+      {
+        "player_key": "demo.wr.1",
+        "name": "Example Wide Receiver",
+        "positions": ["WR"],
+        "nfl_team": "EX2",
+        "bye_week": 11,
+        "projected_points": 235,
+        "adp": 16.5,
+        "tier": 2,
+        "floor_score": 0.75,
+        "ceiling_score": 0.82,
+        "risk_score": 0.25
+      },
+      {
+        "player_key": "demo.qb.1",
+        "name": "Example Quarterback",
+        "positions": ["QB"],
+        "nfl_team": "EX3",
+        "bye_week": 6,
+        "projected_points": 330,
+        "adp": 38,
+        "tier": 2,
+        "floor_score": 0.78,
+        "ceiling_score": 0.76,
+        "risk_score": 0.18
+      }
+    ],
+    "position_drafted_counts": {
+      "QB": 1,
+      "RB": 7,
+      "WR": 5,
+      "TE": 1
+    },
+    "data_version": "replace-with-source-and-timestamp"
+  }
+}
