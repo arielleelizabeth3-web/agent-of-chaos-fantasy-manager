@@ -1,5 +1,5 @@
-const CACHE = 'agent-of-chaos-shell-v2';
-const SHELL = ['/', '/manifest.webmanifest', '/app-icon-192.png', '/app-icon-512.png', '/apple-touch-icon.png', '/agent-of-chaos-family.webp', '/agent-of-chaos-friends.webp'];
+const CACHE = 'agent-of-chaos-shell-v3';
+const SHELL = ['/', '/manifest.webmanifest', '/app-icon-v2-192.png', '/app-icon-v2-512.png', '/apple-touch-icon-v2.png', '/agent-of-chaos-family.webp', '/agent-of-chaos-friends.webp'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));

@@ -13,9 +13,9 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
-      { url: '/app-icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/app-icon-v2-192.png', sizes: '192x192', type: 'image/png' },
     ],
-    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+    apple: [{ url: '/apple-touch-icon-v2.png?v=2', sizes: '180x180', type: 'image/png' }],
   },
   openGraph: {
     title: 'Agent of Chaos | Fantasy Command Center',
@@ -31,5 +31,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}<PwaRegister /></body></html>;
+  return <html lang="en"><head><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-v2.png?v=2" /><link rel="apple-touch-icon-precomposed" sizes="180x180" href="/apple-touch-icon-precomposed.png?v=2" /></head><body>{children}<PwaRegister /></body></html>;
 }
