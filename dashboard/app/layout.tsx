@@ -10,7 +10,13 @@ export const metadata: Metadata = {
   description: 'A private fantasy football draft and team management cockpit.',
   manifest: '/manifest.webmanifest',
   appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'Agent of Chaos' },
-  icons: { icon: '/agent-of-chaos-family.webp' },
+  icons: {
+    icon: [
+      { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/app-icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+  },
   openGraph: {
     title: 'Agent of Chaos | Fantasy Command Center',
     description: 'A private fantasy football draft and team management cockpit.',
