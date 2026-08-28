@@ -59,8 +59,11 @@ The private production dashboard is available at [agent-of-chaos-fantasy-manager
 - live recommendation recalculation after every recorded pick;
 - one-click Agent selections when the team is on the clock;
 - private cloud-synced draft state and rosters for both leagues;
-- undo, reset, roster, and audit-log views; and
-- server-side Yahoo OAuth token protection, league configuration, automation guardrails, and staged lineup and waiver modules;
+- a rule-aware Mac 5 Fantasy Football profile with its full-PPR scoring, keeper format, roster, waivers, trades, and playoff settings;
+- an interactive scoring calculator for validating Yahoo fantasy points;
+- manual Bridge Mode lineup optimization and waiver upgrade comparisons that cloud-sync across devices;
+- undo, reset, roster, league profile, and audit-log views;
+- server-side Yahoo OAuth token protection, league configuration, and automation guardrails;
 - installable Progressive Web App support for phone home screens; and
 - owner-only access through Sites.
 
@@ -76,11 +79,10 @@ agent-of-chaos draft-recommend examples/draft_request.example.json
 
 ## Next capabilities
 
-- Import league rules, teams, rosters, and scoring settings.
+- Import the Friends League rules and scoring settings.
 - Connect current projections, ADP, injuries, and news to the draft engine.
 - Track the Yahoo live draft board when permitted by available access.
-- Recommend weekly lineups.
-- Analyze waivers, injuries, matchups, and FAAB bids.
+- Enrich weekly lineup and waiver recommendations with live injuries, matchups, and FAAB data.
 - Maintain separate decision histories for both teams.
 - Provide an auditable explanation for every recommendation.
 - Support supervised Yahoo actions only if authorized write access becomes available.

@@ -19,6 +19,22 @@ export const teamSettings = sqliteTable('team_settings', {
   updatedAt: text('updated_at').notNull(),
 }, (table) => [primaryKey({ columns: [table.userId, table.team] })]);
 
+export const leagueProfiles = sqliteTable('league_profiles', {
+  userId: text('user_id').notNull(),
+  team: text('team').notNull(),
+  profileJson: text('profile_json').notNull(),
+  source: text('source').notNull().default('manual'),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => [primaryKey({ columns: [table.userId, table.team] })]);
+
+export const bridgeStates = sqliteTable('bridge_states', {
+  userId: text('user_id').notNull(),
+  team: text('team').notNull(),
+  rosterJson: text('roster_json').notNull().default('[]'),
+  waiverJson: text('waiver_json').notNull().default('[]'),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => [primaryKey({ columns: [table.userId, table.team] })]);
+
 export const yahooTokens = sqliteTable('yahoo_tokens', {
   userId: text('user_id').primaryKey(),
   accessToken: text('access_token').notNull(),

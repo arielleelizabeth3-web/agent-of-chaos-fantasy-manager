@@ -11,9 +11,16 @@ import {
   nextAgentPick,
   rankBoard,
 } from './lib/draft';
+import {
+  BridgePlayer,
+  BridgeTeamState,
+  calculateFantasyPoints,
+  DEFAULT_PROFILES,
+  LeagueProfile,
+  Team,
+} from './lib/league';
 
-type Team = 'family' | 'friends';
-type View = 'draft' | 'roster' | 'lineups' | 'waivers' | 'audit' | 'settings';
+type View = 'draft' | 'roster' | 'lineups' | 'waivers' | 'league' | 'audit' | 'settings';
 type SyncStatus = 'loading' | 'saving' | 'synced' | 'local' | 'error';
 
 type TeamSettings = {
@@ -33,10 +40,12 @@ type YahooStatus = {
 
 type StatePayload = { drafts?: Record<Team, DraftState>; user?: { displayName?: string; email?: string } };
 type SettingsPayload = { settings?: Record<Team, TeamSettings> };
+type LeaguePayload = { profiles?: Record<Team, LeagueProfile> };
+type BridgePayload = { bridge?: Record<Team, BridgeTeamState> };
 
 const teamDetails = {
-  family: { label: 'Family League', shortLabel: 'Family', logo: '/agent-of-chaos-family.webp', format: 'Demo · 12-team half-PPR' },
-  friends: { label: 'Friends League', shortLabel: 'Friends', logo: '/agent-of-chaos-friends.webp', format: 'Demo · 12-team half-PPR' },
+  family: { shortLabel: 'Family', logo: '/agent-of-chaos-family.webp' },
+  friends: { shortLabel: 'Friends', logo: '/agent-of-chaos-friends.webp' },
 };
 
 const navItems: Array<{ view: View; icon: string; label: string }> = [
@@ -44,14 +53,18 @@ const navItems: Array<{ view: View; icon: string; label: string }> = [
   { view: 'roster', icon: 'R', label: 'Roster' },
   { view: 'lineups', icon: 'L', label: 'Lineups' },
   { view: 'waivers', icon: 'W', label: 'Waivers' },
+  { view: 'league', icon: 'P', label: 'League profile' },
   { view: 'audit', icon: 'A', label: 'Audit log' },
   { view: 'settings', icon: 'S', label: 'Production setup' },
 ];
 
 const initialDrafts: Record<Team, DraftState> = { family: newDraftState(), friends: newDraftState() };
 const initialSettings: Record<Team, TeamSettings> = {
-  family: { leagueId: '', yahooTeamKey: '', lineupReview: true, waiverWatch: true, weeklyReport: true },
+  family: { leagueId: '186731', yahooTeamKey: '', lineupReview: true, waiverWatch: true, weeklyReport: true },
   friends: { leagueId: '', yahooTeamKey: '', lineupReview: true, waiverWatch: true, weeklyReport: true },
+};
+const initialBridge: Record<Team, BridgeTeamState> = {
+  family: { roster: [], waivers: [] }, friends: { roster: [], waivers: [] },
 };
 
 export default function Home() {
@@ -67,12 +80,20 @@ export default function Home() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading');
   const [cloudSyncEnabled, setCloudSyncEnabled] = useState(true);
   const [settings, setSettings] = useState(initialSettings);
+  const [profiles, setProfiles] = useState(DEFAULT_PROFILES);
+  const [bridge, setBridge] = useState(initialBridge);
   const [yahooStatus, setYahooStatus] = useState<YahooStatus | null>(null);
   const [userName, setUserName] = useState('Private manager');
 
-  const activeTeam = teamDetails[team];
+  const branding = teamDetails[team];
+  const profile = profiles[team];
+  const activeTeam = { ...branding, label: profile.leagueName, format: profile.summary };
   const draft = drafts[team];
-  const board = useMemo(() => rankBoard(draft), [draft]);
+  const board = useMemo(() => rankBoard(draft, {
+    receptionsPerReception: ruleValue(profile, 'receptions'),
+    longTouchdownBonus: ruleValue(profile, 'receiving40Touchdowns'),
+    interceptionPenalty: ruleValue(profile, 'interceptions'),
+  }), [draft, profile]);
   const recommendation = board[0];
   const nextPick = nextAgentPick(draft.currentPick);
   const onClock = nextPick === draft.currentPick;
@@ -89,10 +110,14 @@ export default function Home() {
       }),
       fetch('/api/settings', { signal: controller.signal }).then((response) => response.json() as Promise<SettingsPayload>),
       fetch('/api/yahoo/status', { signal: controller.signal }).then((response) => response.json() as Promise<YahooStatus>),
-    ]).then(([stateData, settingsData, yahooData]) => {
+      fetch('/api/league', { signal: controller.signal }).then((response) => response.json() as Promise<LeaguePayload>),
+      fetch('/api/bridge', { signal: controller.signal }).then((response) => response.json() as Promise<BridgePayload>),
+    ]).then(([stateData, settingsData, yahooData, leagueData, bridgeData]) => {
       setDrafts(stateData.drafts ?? initialDrafts);
       setSettings(settingsData.settings ?? initialSettings);
       setYahooStatus(yahooData);
+      setProfiles(leagueData.profiles ?? DEFAULT_PROFILES);
+      setBridge(bridgeData.bridge ?? initialBridge);
       setUserName(stateData.user?.displayName ?? stateData.user?.email ?? 'Private manager');
       setSyncStatus('synced');
     }).catch(() => {
@@ -130,6 +155,17 @@ export default function Home() {
     }, 650);
     return () => window.clearTimeout(timer);
   }, [drafts, loaded, cloudSyncEnabled]);
+
+  useEffect(() => {
+    if (!loaded || !cloudSyncEnabled) return;
+    const timer = window.setTimeout(() => {
+      void fetch('/api/bridge', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team, state: bridge[team] }),
+      }).catch(() => setSyncStatus('error'));
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [bridge, team, loaded, cloudSyncEnabled]);
 
   useEffect(() => {
     if (!onClock) return;
@@ -219,6 +255,11 @@ export default function Home() {
     }
   }
 
+  function updateBridge(next: BridgeTeamState) {
+    setBridge((current) => ({ ...current, [team]: next }));
+    setSyncStatus(cloudSyncEnabled ? 'saving' : 'local');
+  }
+
   const clockText = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
   const positionRun = board.slice(0, 10).filter((player) => player.position === recommendation?.position).length;
 
@@ -262,7 +303,7 @@ export default function Home() {
               <div className={`pick-clock ${onClock ? 'live' : ''}`}><span>{onClock ? 'On the clock' : 'Next Agent pick'}</span><strong>{onClock ? clockText : `#${nextPick ?? '—'}`}</strong></div>
             </div>
 
-            <div className="demo-banner"><span>Demo player board</span><p>Interactions and scoring are live. Current NFL data will replace these fictional players in the data-connection phase.</p><button type="button" onClick={resetDraft}>Reset demo</button></div>
+            <div className="demo-banner"><span>{profile.imported ? 'League-aware brain' : 'Demo player board'}</span><p>{profile.imported ? `${profile.leagueName} scoring and roster construction are active. The sample names remain fictional until a projection board is imported.` : 'Interactions and scoring are live. Import this league’s settings to tune the decision engine.'}</p><button type="button" onClick={resetDraft}>Reset demo</button></div>
 
             <div className="draft-grid">
               <div className="primary-column">
@@ -312,9 +353,11 @@ export default function Home() {
         )}
 
         {view === 'roster' && <RosterView roster={roster} teamName={activeTeam.label} />}
+        {view === 'lineups' && <LineupView profile={profile} state={bridge[team]} onChange={updateBridge} />}
+        {view === 'waivers' && <WaiverView state={bridge[team]} onChange={updateBridge} />}
+        {view === 'league' && <LeagueProfileView profile={profile} />}
         {view === 'audit' && <AuditView draft={draft} />}
         {view === 'settings' && <SettingsView teamName={activeTeam.label} values={settings[team]} yahoo={yahooStatus} onChange={updateTeamSettings} onSave={saveTeamSettings} />}
-        {(view === 'lineups' || view === 'waivers') && <ComingSoonView view={view} />}
       </div>
       <nav className="mobile-nav" aria-label="Manager sections">
         {navItems.map((item) => <button key={item.view} type="button" className={view === item.view ? 'active' : ''} onClick={() => setView(item.view)}><span>{item.icon}</span>{item.label}</button>)}
@@ -379,7 +422,93 @@ function syncLabel(status: SyncStatus) {
   return 'Connecting…';
 }
 
-function ComingSoonView({ view }: { view: 'lineups' | 'waivers' }) {
-  const isLineups = view === 'lineups';
-  return <section className="module-page"><p className="eyebrow accent-text">Season command</p><h2>{isLineups ? 'Lineup optimizer' : 'Waiver room'}</h2><p className="module-subtitle">This module is staged for the league-data connection phase.</p><div className="coming-card"><span>{isLineups ? 'L' : 'W'}</span><div><h3>{isLineups ? 'Strongest legal lineup, every week' : 'FAAB discipline meets upside hunting'}</h3><p>{isLineups ? 'Once rosters and schedules are connected, the agent will account for injuries, matchups, game times, floor, upside, and late-swap flexibility.' : 'The agent will rank available players, recommend drops, calculate bids, and preserve separate budgets for both leagues.'}</p></div><b>Ready for data</b></div></section>;
+function LineupView({ profile, state, onChange }: { profile: LeagueProfile; state: BridgeTeamState; onChange: (state: BridgeTeamState) => void }) {
+  const starters = optimizeLineup(state.roster);
+  const sorted = [...state.roster].sort((a, b) => Number(starters.has(b.id)) - Number(starters.has(a.id)) || b.projection - a.projection);
+  return <section className="module-page bridge-page">
+    <p className="eyebrow accent-text">Bridge mode · cloud saved</p><h2>Lineup optimizer</h2>
+    <p className="module-subtitle">Enter Yahoo’s weekly projections and availability. The app fills the strongest legal {profile.roster.slots.join(' · ')} lineup without needing API access.</p>
+    <PlayerEditor title="Add a roster player" action="Add player" onAdd={(player) => onChange({ ...state, roster: [...state.roster, player] })} />
+    <div className="bridge-list">
+      {sorted.length ? sorted.map((player) => <article key={player.id} className={`bridge-player ${starters.has(player.id) ? 'starter' : ''}`}>
+        <span className="lineup-badge">{starters.has(player.id) ? 'START' : 'BENCH'}</span><div><b>{player.name}</b><small>{player.position} · {player.status}</small></div><strong>{player.projection.toFixed(1)}</strong>
+        <button type="button" aria-label={`Remove ${player.name}`} onClick={() => onChange({ ...state, roster: state.roster.filter((item) => item.id !== player.id) })}>×</button>
+      </article>) : <div className="empty-state"><span>L</span><h3>Add your Yahoo roster</h3><p>The optimizer will identify starters as soon as players and weekly projections are entered.</p></div>}
+    </div>
+  </section>;
+}
+
+function WaiverView({ state, onChange }: { state: BridgeTeamState; onChange: (state: BridgeTeamState) => void }) {
+  const decisions = state.waivers.map((candidate) => {
+    const samePosition = state.roster.filter((player) => player.position === candidate.position && player.status !== 'IR').sort((a, b) => a.projection - b.projection);
+    const drop = samePosition[0];
+    return { candidate, drop, delta: candidate.projection - (drop?.projection ?? 0) };
+  }).sort((a, b) => b.delta - a.delta);
+  function claim(candidate: BridgePlayer, drop?: BridgePlayer) {
+    onChange({ roster: [...state.roster.filter((player) => player.id !== drop?.id), candidate], waivers: state.waivers.filter((player) => player.id !== candidate.id) });
+  }
+  return <section className="module-page bridge-page">
+    <p className="eyebrow accent-text">Bridge mode · decision queue</p><h2>Waiver room</h2>
+    <p className="module-subtitle">Add available players with Yahoo’s weekly projections. Agent of Chaos compares each one with the weakest rostered player at the same position.</p>
+    <PlayerEditor title="Add a waiver candidate" action="Add candidate" onAdd={(player) => onChange({ ...state, waivers: [...state.waivers, player] })} />
+    <div className="waiver-grid">
+      {decisions.length ? decisions.map(({ candidate, drop, delta }, index) => <article className="waiver-card" key={candidate.id}>
+        <div className="waiver-rank">#{index + 1}</div><div className="waiver-copy"><span>{candidate.position} · {candidate.status}</span><h3>{candidate.name}</h3><p>{drop ? `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} projected points versus ${drop.name}.` : 'No same-position player is currently on the roster.'}</p></div>
+        <div className={`waiver-delta ${delta > 0 ? 'positive' : ''}`}><strong>{candidate.projection.toFixed(1)}</strong><span>projected</span></div>
+        <div className="waiver-actions"><button type="button" className="primary-action" onClick={() => claim(candidate, drop)}>{drop ? `Claim · drop ${drop.name}` : 'Add to roster'}</button><button type="button" className="secondary-action" onClick={() => onChange({ ...state, waivers: state.waivers.filter((player) => player.id !== candidate.id) })}>Remove</button></div>
+      </article>) : <div className="empty-state"><span>W</span><h3>No waiver candidates</h3><p>Add the players you are considering and the comparison queue will rank them.</p></div>}
+    </div>
+  </section>;
+}
+
+function PlayerEditor({ title, action, onAdd }: { title: string; action: string; onAdd: (player: BridgePlayer) => void }) {
+  const [name, setName] = useState('');
+  const [position, setPosition] = useState<BridgePlayer['position']>('RB');
+  const [projection, setProjection] = useState('');
+  const [status, setStatus] = useState<BridgePlayer['status']>('Active');
+  function submit() {
+    const points = Number(projection);
+    if (!name.trim() || !Number.isFinite(points) || points < 0) return;
+    onAdd({ id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${name}`, name: name.trim(), position, projection: points, status });
+    setName(''); setProjection(''); setStatus('Active');
+  }
+  return <article className="player-editor"><div><span className="eyebrow">Manual Yahoo entry</span><h3>{title}</h3></div><label>Player name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Player name" /></label><label>Position<select value={position} onChange={(event) => setPosition(event.target.value as BridgePlayer['position'])}>{['QB', 'RB', 'WR', 'TE', 'K', 'DEF'].map((value) => <option key={value}>{value}</option>)}</select></label><label>Projection<input type="number" min="0" step="0.1" value={projection} onChange={(event) => setProjection(event.target.value)} placeholder="14.8" /></label><label>Status<select value={status} onChange={(event) => setStatus(event.target.value as BridgePlayer['status'])}>{['Active', 'Questionable', 'Out', 'IR'].map((value) => <option key={value}>{value}</option>)}</select></label><button type="button" className="primary-action" onClick={submit}>{action}</button></article>;
+}
+
+function LeagueProfileView({ profile }: { profile: LeagueProfile }) {
+  const [stats, setStats] = useState<Record<string, number>>({});
+  const calculatorRules = profile.scoring.offense.filter((rule) => ['passingYards', 'passingTouchdowns', 'interceptions', 'rushingYards', 'rushingTouchdowns', 'receptions', 'receivingYards', 'receivingTouchdowns', 'passing40Touchdowns', 'rushing40Touchdowns', 'receiving40Touchdowns', 'fumblesLost'].includes(rule.key));
+  const total = calculateFantasyPoints(stats, profile);
+  if (!profile.imported) return <section className="module-page"><p className="eyebrow accent-text">League intelligence</p><h2>League profile</h2><div className="empty-state"><span>P</span><h3>Settings not imported yet</h3><p>Send screenshots of this league’s Yahoo Scoring & Settings page and Agent of Chaos will build its second rule-aware profile.</p></div></section>;
+  return <section className="module-page profile-page">
+    <p className="eyebrow accent-text">Yahoo settings imported</p><h2>{profile.leagueName}</h2><p className="module-subtitle">League {profile.leagueId} · {profile.summary}. These rules now drive draft and weekly decisions.</p>
+    <div className="profile-hero-grid">
+      <article className="profile-summary"><span className="setup-status ready">Profile active</span><h3>League format</h3><div className="profile-facts"><div><span>Draft</span><strong>{profile.draft.time}</strong><small>{profile.draft.type} · {profile.draft.secondsPerPick} sec/pick</small></div><div><span>Roster</span><strong>{profile.roster.slots.join(' · ')}</strong><small>{profile.roster.bench} bench · {profile.roster.injuredReserve} IR</small></div><div><span>Waivers</span><strong>{profile.waivers.type}</strong><small>{profile.waivers.processing} · {profile.waivers.periodDays} day</small></div><div><span>Playoffs</span><strong>{profile.playoffs.teams} teams · Weeks {profile.playoffs.weeks.join(', ')}</strong><small>{profile.playoffs.tiebreaker} · reseeding {profile.playoffs.reseeding ? 'on' : 'off'}</small></div></div></article>
+      <article className="score-calculator"><div><span className="eyebrow">Scoring lab</span><h3>Fantasy point calculator</h3><p>Enter a player stat line to verify Yahoo scoring.</p></div><div className="calculator-total"><span>Total</span><strong>{total.toFixed(2)}</strong><small>fantasy points</small></div><div className="calculator-grid">{calculatorRules.map((rule) => <label key={rule.key}>{rule.label}<input type="number" min="0" value={stats[rule.key] ?? ''} onChange={(event) => setStats((current) => ({ ...current, [rule.key]: Number(event.target.value) || 0 }))} /></label>)}</div></article>
+    </div>
+    <div className="rules-grid">
+      <RuleTable title="Offense" rules={profile.scoring.offense} />
+      <RuleTable title="Kickers" rules={profile.scoring.kicking} />
+      <RuleTable title="Defense / special teams" rules={profile.scoring.defense} />
+      <article className="rule-card"><div className="rule-card-title"><span>League operations</span><strong>{profile.settings.length} imported rules</strong></div><div className="rule-list">{profile.settings.map((setting) => <div key={setting.label}><span>{setting.label}</span><strong>{setting.value}</strong></div>)}<div><span>Trade deadline</span><strong>{profile.trades.deadline}</strong></div><div><span>Trade review</span><strong>{profile.trades.review} · {profile.trades.rejectDays} day</strong></div></div></article>
+    </div>
+  </section>;
+}
+
+function RuleTable({ title, rules }: { title: string; rules: LeagueProfile['scoring']['offense'] }) {
+  return <article className="rule-card"><div className="rule-card-title"><span>{title}</span><strong>{rules.length} rules</strong></div><div className="rule-list">{rules.map((rule) => <div key={rule.key}><span>{rule.label}</span><strong>{rule.display}</strong></div>)}</div></article>;
+}
+
+function optimizeLineup(players: BridgePlayer[]) {
+  const eligible = players.filter((player) => !['Out', 'IR'].includes(player.status)).sort((a, b) => b.projection - a.projection);
+  const starters = new Set<string>();
+  const take = (position: BridgePlayer['position'], count: number) => eligible.filter((player) => player.position === position && !starters.has(player.id)).slice(0, count).forEach((player) => starters.add(player.id));
+  take('QB', 1); take('RB', 2); take('WR', 2); take('TE', 1); take('K', 1); take('DEF', 1);
+  const flex = eligible.filter((player) => ['RB', 'WR', 'TE'].includes(player.position) && !starters.has(player.id))[0];
+  if (flex) starters.add(flex.id);
+  return starters;
+}
+
+function ruleValue(profile: LeagueProfile, key: string) {
+  return [...profile.scoring.offense, ...profile.scoring.kicking, ...profile.scoring.defense].find((rule) => rule.key === key)?.value ?? 0;
 }

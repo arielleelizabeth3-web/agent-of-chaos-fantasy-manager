@@ -13,7 +13,7 @@ type TeamSettings = {
 };
 
 const defaults: Record<(typeof teams)[number], TeamSettings> = {
-  family: { leagueId: '', yahooTeamKey: '', lineupReview: true, waiverWatch: true, weeklyReport: true },
+  family: { leagueId: '186731', yahooTeamKey: '', lineupReview: true, waiverWatch: true, weeklyReport: true },
   friends: { leagueId: '', yahooTeamKey: '', lineupReview: true, waiverWatch: true, weeklyReport: true },
 };
 

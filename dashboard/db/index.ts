@@ -34,6 +34,22 @@ async function initializeSchema() {
       updated_at TEXT NOT NULL,
       PRIMARY KEY (user_id, team)
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS league_profiles (
+      user_id TEXT NOT NULL,
+      team TEXT NOT NULL,
+      profile_json TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'manual',
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, team)
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS bridge_states (
+      user_id TEXT NOT NULL,
+      team TEXT NOT NULL,
+      roster_json TEXT NOT NULL DEFAULT '[]',
+      waiver_json TEXT NOT NULL DEFAULT '[]',
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, team)
+    )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS yahoo_tokens (
       user_id TEXT PRIMARY KEY,
       access_token TEXT NOT NULL,

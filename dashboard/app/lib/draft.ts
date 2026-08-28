@@ -43,6 +43,12 @@ export type RankedPlayer = DraftPlayer & {
   rationale: string;
 };
 
+export type DraftLeagueConfig = {
+  receptionsPerReception: number;
+  longTouchdownBonus: number;
+  interceptionPenalty: number;
+};
+
 export const TEAM_COUNT = 12;
 export const DRAFT_SLOT = 10;
 export const TOTAL_ROUNDS = 15;
@@ -131,7 +137,7 @@ function phaseWeights(round: number) {
   return { replacement: .16, rosterFit: .18, scarcity: .08, adpValue: .08, survival: .08, upside: .3, safety: .06, byeFit: .06 };
 }
 
-export function rankBoard(state: DraftState): RankedPlayer[] {
+export function rankBoard(state: DraftState, league?: DraftLeagueConfig): RankedPlayer[] {
   const drafted = new Set(state.history.map((item) => item.playerKey));
   const available = DEMO_PLAYERS.filter((player) => !drafted.has(player.key));
   const round = draftRound(state.currentPick);
@@ -160,6 +166,13 @@ export function rankBoard(state: DraftState): RankedPlayer[] {
     if (player.position === 'QB' && roster.QB >= 1 && round < 9) score -= 18;
     if (player.position === 'TE' && roster.TE >= 1 && round < 9) score -= 12;
     if (player.tier === 1 && ['QB', 'TE'].includes(player.position)) score += 4;
+    if (league?.receptionsPerReception === 1) {
+      if (player.position === 'WR') score += 3.5;
+      if (player.position === 'TE') score += 2.5;
+      if (player.position === 'RB') score += 1.5;
+    }
+    if ((league?.longTouchdownBonus ?? 0) > 0) score += player.ceiling * 2.5;
+    if (player.position === 'QB' && (league?.interceptionPenalty ?? 0) <= -2) score -= player.risk * 4;
 
     const labels: Array<[string, number]> = [
       ['replacement-level advantage', components.replacement],
@@ -170,7 +183,8 @@ export function rankBoard(state: DraftState): RankedPlayer[] {
       ['upside', components.upside],
     ];
     const strongest = labels.sort((a, b) => b[1] - a[1]).slice(0, 3).map(([label]) => label);
-    return { ...player, score: Math.round(clamp(score) * 10) / 10, components, rationale: `Best available value, led by ${strongest.join(', ')}.` };
+    const scoringNote = league?.receptionsPerReception === 1 ? ' Full-PPR and 40+ yard bonuses are included.' : '';
+    return { ...player, score: Math.round(clamp(score) * 10) / 10, components, rationale: `Best available value, led by ${strongest.join(', ')}.${scoringNote}` };
   }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 }
 
