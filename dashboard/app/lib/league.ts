@@ -58,6 +58,12 @@ const offense: ScoringRule[] = [
   { key: 'receiving40Touchdowns', label: '40+ yard receiving TD', value: 2, unit: 'bonus', display: '+2 bonus' },
 ];
 
+const friendsOffense = offense.filter((rule) => ![
+  'passing40Touchdowns',
+  'rushing40Touchdowns',
+  'receiving40Touchdowns',
+].includes(rule.key));
+
 const kicking: ScoringRule[] = [
   { key: 'fieldGoals0To19', label: 'Field goals 0–19 yards', value: 3, unit: 'point', display: '3 pts' },
   { key: 'fieldGoals20To29', label: 'Field goals 20–29 yards', value: 3, unit: 'point', display: '3 pts' },
@@ -104,13 +110,17 @@ export const FAMILY_PROFILE: LeagueProfile = {
   trades: { deadline: 'November 28, 2026', review: 'League votes', rejectDays: 1, maximum: 'No maximum' },
   playoffs: { teams: 6, weeks: [15, 16, 17], tiebreaker: 'Higher seed wins', reseeding: true },
   settings: [
+    { label: 'Auto-renew', value: 'Enabled' },
+    { label: 'Cash league', value: 'No' },
     { label: 'Scoring', value: 'Head-to-head · Week 1 start' },
     { label: 'Acquisitions', value: 'No season or weekly maximum' },
     { label: 'Trades', value: 'No maximum · draft picks allowed' },
     { label: 'Can’t-cut list', value: 'Yahoo Sports' },
     { label: 'Post-draft players', value: 'Follow waiver rules' },
     { label: 'Divisions', value: 'None' },
+    { label: 'Eliminated-team locking', value: 'Disabled' },
     { label: 'Median / second opponent', value: 'Disabled' },
+    { label: 'Fractional / negative points', value: 'Enabled' },
     { label: 'Bench locking', value: 'Disabled' },
     { label: 'Postponed-game IR', value: 'Enabled' },
     { label: 'League visibility', value: 'Private' },
@@ -120,14 +130,37 @@ export const FAMILY_PROFILE: LeagueProfile = {
 };
 
 export const FRIENDS_PROFILE: LeagueProfile = {
-  leagueName: 'Friends League', leagueId: '', imported: false,
-  summary: 'Waiting for league settings', teamCount: 12,
-  draft: { type: 'Not imported', time: 'Not imported', secondsPerPick: 60, keeper: false, keeperDeadline: 'Not imported', draftPickTrades: false },
-  roster: { slots: ['QB', 'WR', 'WR', 'RB', 'RB', 'TE', 'W/R/T', 'K', 'DEF'], bench: 6, injuredReserve: 2 },
-  waivers: { type: 'Not imported', processing: 'Not imported', periodDays: 1, injuredToIr: false },
-  trades: { deadline: 'Not imported', review: 'Not imported', rejectDays: 1, maximum: 'Not imported' },
-  playoffs: { teams: 0, weeks: [], tiebreaker: 'Not imported', reseeding: false },
-  settings: [], scoring: { offense: [], kicking: [], defense: [] },
+  leagueName: 'Friends',
+  leagueId: '662011',
+  imported: true,
+  summary: '12-team · Full PPR · Keeper · Head-to-head',
+  teamCount: 12,
+  draft: {
+    type: 'Live Standard Draft',
+    time: 'Thu Sep 3, 2026 · 8:00 PM EDT',
+    secondsPerPick: 45,
+    keeper: true,
+    keeperDeadline: 'Wed Sep 2, 2026 · 3:00 AM EDT',
+    draftPickTrades: true,
+  },
+  roster: { slots: ['QB', 'WR', 'WR', 'RB', 'RB', 'TE', 'W/R/T', 'K', 'DEF'], bench: 7, injuredReserve: 2 },
+  waivers: { type: 'Continual rolling list', processing: 'Game Time – Tuesday', periodDays: 1, injuredToIr: true },
+  trades: { deadline: 'November 28, 2026', review: 'League votes', rejectDays: 1, maximum: 'No maximum' },
+  playoffs: { teams: 6, weeks: [15, 16, 17], tiebreaker: 'Higher seed wins', reseeding: true },
+  settings: [
+    { label: 'Scoring', value: 'Head-to-head · Week 1 start' },
+    { label: 'Acquisitions', value: 'No season or weekly maximum' },
+    { label: 'Trades', value: 'No maximum · draft picks allowed' },
+    { label: 'Can’t-cut list', value: 'Yahoo Sports' },
+    { label: 'Post-draft players', value: 'Follow waiver rules' },
+    { label: 'Divisions', value: 'None' },
+    { label: 'Median / second opponent', value: 'Disabled' },
+    { label: 'Bench locking', value: 'Disabled' },
+    { label: 'Postponed-game IR', value: 'Disabled' },
+    { label: 'League visibility', value: 'Private' },
+    { label: 'Invite permissions', value: 'All managers can invite' },
+  ],
+  scoring: { offense: friendsOffense, kicking, defense },
 };
 
 export const DEFAULT_PROFILES: Record<Team, LeagueProfile> = { family: FAMILY_PROFILE, friends: FRIENDS_PROFILE };

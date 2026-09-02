@@ -183,7 +183,13 @@ export function rankBoard(state: DraftState, league?: DraftLeagueConfig): Ranked
       ['upside', components.upside],
     ];
     const strongest = labels.sort((a, b) => b[1] - a[1]).slice(0, 3).map(([label]) => label);
-    const scoringNote = league?.receptionsPerReception === 1 ? ' Full-PPR and 40+ yard bonuses are included.' : '';
+    const scoringNote = league?.receptionsPerReception === 1
+      ? league.longTouchdownBonus > 0
+        ? ' Full-PPR and 40+ yard bonuses are included.'
+        : ' Full-PPR scoring is included.'
+      : (league?.longTouchdownBonus ?? 0) > 0
+        ? ' 40+ yard touchdown bonuses are included.'
+        : '';
     return { ...player, score: Math.round(clamp(score) * 10) / 10, components, rationale: `Best available value, led by ${strongest.join(', ')}.${scoringNote}` };
   }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 }

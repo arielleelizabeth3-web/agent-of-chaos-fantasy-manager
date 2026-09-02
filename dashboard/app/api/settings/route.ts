@@ -14,7 +14,7 @@ type TeamSettings = {
 
 const defaults: Record<(typeof teams)[number], TeamSettings> = {
   family: { leagueId: '186731', yahooTeamKey: '', lineupReview: true, waiverWatch: true, weeklyReport: true },
-  friends: { leagueId: '', yahooTeamKey: '', lineupReview: true, waiverWatch: true, weeklyReport: true },
+  friends: { leagueId: '662011', yahooTeamKey: '', lineupReview: true, waiverWatch: true, weeklyReport: true },
 };
 
 export async function GET(request: Request) {
@@ -28,7 +28,7 @@ export async function GET(request: Request) {
   for (const row of result.results) {
     if (!teams.includes(row.team as (typeof teams)[number])) continue;
     settings[row.team as (typeof teams)[number]] = {
-      leagueId: row.league_id,
+      leagueId: row.league_id || defaults[row.team as (typeof teams)[number]].leagueId,
       yahooTeamKey: row.yahoo_team_key,
       lineupReview: Boolean(row.lineup_review),
       waiverWatch: Boolean(row.waiver_watch),

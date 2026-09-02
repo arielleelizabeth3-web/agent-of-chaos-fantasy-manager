@@ -11,9 +11,13 @@ export async function GET(request: Request) {
   await ensureSchema();
   const db = getD1();
   const now = new Date().toISOString();
-  await db.batch(teams.map((team) => db.prepare(`INSERT OR IGNORE INTO league_profiles
-    (user_id, team, profile_json, source, updated_at) VALUES (?, ?, ?, ?, ?)`)
-    .bind(user.userId, team, JSON.stringify(DEFAULT_PROFILES[team]), team === 'family' ? 'Yahoo settings photos' : 'default', now)));
+  await db.batch(teams.map((team) => db.prepare(`INSERT INTO league_profiles
+    (user_id, team, profile_json, source, updated_at) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, team) DO UPDATE SET profile_json = excluded.profile_json,
+      source = excluded.source, updated_at = excluded.updated_at
+    WHERE league_profiles.source = 'default'`)
+    .bind(user.userId, team, JSON.stringify(DEFAULT_PROFILES[team]),
+      DEFAULT_PROFILES[team].imported ? 'Yahoo settings photos' : 'default', now)));
   const result = await db.prepare('SELECT team, profile_json, source, updated_at FROM league_profiles WHERE user_id = ?')
     .bind(user.userId).all<{ team: string; profile_json: string; source: string; updated_at: string }>();
   const profiles = structuredClone(DEFAULT_PROFILES);
