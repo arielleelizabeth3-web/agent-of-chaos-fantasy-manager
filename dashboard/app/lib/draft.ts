@@ -1,3 +1,5 @@
+import { CURRENT_DRAFT_BOARD } from '../data/draft-board';
+
 export type Position = 'QB' | 'RB' | 'WR' | 'TE' | 'K' | 'DEF';
 
 export type DraftPlayer = {
@@ -8,6 +10,7 @@ export type DraftPlayer = {
   bye: number;
   projectedPoints: number;
   adp: number;
+  yahooRank: number;
   tier: number;
   floor: number;
   ceiling: number;
@@ -24,6 +27,9 @@ export type DraftState = {
   currentPick: number;
   roster: string[];
   history: DraftHistoryItem[];
+  draftSlot?: number;
+  teamCount?: number;
+  totalRounds?: number;
 };
 
 export type ScoreComponents = {
@@ -49,56 +55,65 @@ export type DraftLeagueConfig = {
   interceptionPenalty: number;
 };
 
-export const TEAM_COUNT = 12;
-export const DRAFT_SLOT = 10;
-export const TOTAL_ROUNDS = 15;
+export const DEFAULT_TEAM_COUNT = 12;
+export const DEFAULT_DRAFT_SLOT = 10;
+export const DEFAULT_TOTAL_ROUNDS = 16;
 
 const slots: Record<string, number> = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DEF: 1 };
 const flexShares: Partial<Record<Position, number>> = { RB: .45, WR: .45, TE: .1 };
 
-export const DEMO_PLAYERS: DraftPlayer[] = [
-  { key: 'rb-hale', name: 'Marcus Hale', position: 'RB', proTeam: 'ATL', bye: 5, projectedPoints: 255, adp: 10, tier: 1, floor: .84, ceiling: .92, risk: .16 },
-  { key: 'wr-cross', name: 'Devin Cross', position: 'WR', proTeam: 'SEA', bye: 8, projectedPoints: 244, adp: 12, tier: 1, floor: .82, ceiling: .9, risk: .18 },
-  { key: 'rb-cole', name: 'Jalen Cole', position: 'RB', proTeam: 'BUF', bye: 7, projectedPoints: 238, adp: 16, tier: 2, floor: .76, ceiling: .86, risk: .24 },
-  { key: 'wr-reed', name: 'Isaiah Reed', position: 'WR', proTeam: 'CIN', bye: 10, projectedPoints: 232, adp: 18, tier: 2, floor: .78, ceiling: .83, risk: .21 },
-  { key: 'te-banks', name: 'Theo Banks', position: 'TE', proTeam: 'KC', bye: 6, projectedPoints: 201, adp: 22, tier: 1, floor: .81, ceiling: .88, risk: .17 },
-  { key: 'wr-stone', name: 'Caleb Stone', position: 'WR', proTeam: 'DET', bye: 8, projectedPoints: 221, adp: 24, tier: 2, floor: .73, ceiling: .87, risk: .25 },
-  { key: 'rb-ford', name: 'Nico Ford', position: 'RB', proTeam: 'MIA', bye: 12, projectedPoints: 220, adp: 25, tier: 2, floor: .67, ceiling: .91, risk: .32 },
-  { key: 'qb-wells', name: 'Cameron Wells', position: 'QB', proTeam: 'BAL', bye: 7, projectedPoints: 346, adp: 27, tier: 1, floor: .82, ceiling: .91, risk: .16 },
-  { key: 'wr-price', name: 'Malik Price', position: 'WR', proTeam: 'PHI', bye: 9, projectedPoints: 214, adp: 30, tier: 3, floor: .72, ceiling: .82, risk: .25 },
-  { key: 'rb-west', name: 'Andre West', position: 'RB', proTeam: 'GB', bye: 5, projectedPoints: 207, adp: 34, tier: 3, floor: .7, ceiling: .83, risk: .27 },
-  { key: 'qb-voss', name: 'Eli Voss', position: 'QB', proTeam: 'HOU', bye: 6, projectedPoints: 329, adp: 39, tier: 2, floor: .78, ceiling: .84, risk: .19 },
-  { key: 'te-shaw', name: 'Roman Shaw', position: 'TE', proTeam: 'SF', bye: 14, projectedPoints: 177, adp: 43, tier: 2, floor: .72, ceiling: .85, risk: .24 },
-  { key: 'wr-hayes', name: 'Jordan Hayes', position: 'WR', proTeam: 'LAR', bye: 8, projectedPoints: 198, adp: 47, tier: 3, floor: .68, ceiling: .86, risk: .3 },
-  { key: 'rb-young', name: 'Trey Young', position: 'RB', proTeam: 'CHI', bye: 11, projectedPoints: 192, adp: 51, tier: 4, floor: .64, ceiling: .88, risk: .34 },
-  { key: 'wr-king', name: 'Darius King', position: 'WR', proTeam: 'DAL', bye: 10, projectedPoints: 190, adp: 56, tier: 4, floor: .61, ceiling: .9, risk: .37 },
-  { key: 'qb-nash', name: 'Owen Nash', position: 'QB', proTeam: 'LAC', bye: 12, projectedPoints: 308, adp: 62, tier: 3, floor: .74, ceiling: .79, risk: .2 },
-  { key: 'te-moss', name: 'Grant Moss', position: 'TE', proTeam: 'ARI', bye: 11, projectedPoints: 158, adp: 70, tier: 3, floor: .63, ceiling: .82, risk: .3 },
-  { key: 'rb-lane', name: 'Kendrick Lane', position: 'RB', proTeam: 'NYJ', bye: 9, projectedPoints: 176, adp: 78, tier: 5, floor: .52, ceiling: .93, risk: .43 },
-  { key: 'wr-rivers', name: 'Jayce Rivers', position: 'WR', proTeam: 'JAX', bye: 8, projectedPoints: 174, adp: 84, tier: 5, floor: .54, ceiling: .91, risk: .42 },
-  { key: 'qb-knox', name: 'Miles Knox', position: 'QB', proTeam: 'MIN', bye: 6, projectedPoints: 292, adp: 91, tier: 4, floor: .67, ceiling: .82, risk: .29 },
-  { key: 'te-pierce', name: 'Avery Pierce', position: 'TE', proTeam: 'IND', bye: 10, projectedPoints: 143, adp: 105, tier: 4, floor: .51, ceiling: .88, risk: .4 },
-  { key: 'k-demo', name: 'Demo Kicker', position: 'K', proTeam: 'DAL', bye: 10, projectedPoints: 151, adp: 170, tier: 1, floor: .76, ceiling: .72, risk: .12 },
-  { key: 'def-demo', name: 'Demo Defense', position: 'DEF', proTeam: 'PIT', bye: 5, projectedPoints: 145, adp: 168, tier: 1, floor: .7, ceiling: .78, risk: .2 },
-];
+export function normalizePlayerName(value: string) {
+  return value.toLowerCase().normalize('NFKD').replace(/[’']/g, '')
+    .replace(/\b(jr|sr|ii|iii|iv|defense|dst|d\/st)\b/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
 
-export const newDraftState = (): DraftState => ({ currentPick: 15, roster: [], history: [] });
+const projectionBase: Record<Position, number> = { QB: 360, RB: 305, WR: 300, TE: 235, K: 155, DEF: 150 };
+const projectionDrop: Record<Position, number> = { QB: 5.2, RB: 4.1, WR: 3.7, TE: 5.2, K: 2.1, DEF: 2.1 };
+
+export const DRAFT_PLAYERS: DraftPlayer[] = CURRENT_DRAFT_BOARD.map((entry, index) => {
+  const positionRank = CURRENT_DRAFT_BOARD.slice(0, index + 1).filter((player) => player.position === entry.position).length;
+  const rankShape = Math.min(1, entry.rank / 220);
+  return {
+    key: entry.position.toLowerCase() + '-' + normalizePlayerName(entry.name),
+    name: entry.name,
+    position: entry.position,
+    proTeam: entry.proTeam,
+    bye: entry.bye,
+    projectedPoints: Math.round(Math.max(70, projectionBase[entry.position] - (positionRank - 1) * projectionDrop[entry.position])),
+    adp: entry.rank,
+    yahooRank: entry.yahooRank,
+    tier: Math.max(1, Math.ceil(positionRank / (['RB', 'WR'].includes(entry.position) ? 6 : 4))),
+    floor: Math.max(.42, .88 - rankShape * .34),
+    ceiling: Math.max(.68, .97 - rankShape * .2),
+    risk: Math.min(.58, .12 + rankShape * .38),
+  };
+});
+
+export const newDraftState = (draftSlot = DEFAULT_DRAFT_SLOT, totalRounds = DEFAULT_TOTAL_ROUNDS): DraftState => ({
+  currentPick: 1,
+  roster: [],
+  history: [],
+  draftSlot,
+  teamCount: DEFAULT_TEAM_COUNT,
+  totalRounds,
+});
 
 const clamp = (value: number) => Math.min(100, Math.max(0, value));
 
-export function draftRound(pick: number) {
-  return Math.ceil(pick / TEAM_COUNT);
+export function draftRound(pick: number, teamCount = DEFAULT_TEAM_COUNT) {
+  return Math.ceil(pick / teamCount);
 }
 
-export function agentPickInRound(round: number) {
+export function agentPickInRound(round: number, draftSlot = DEFAULT_DRAFT_SLOT, teamCount = DEFAULT_TEAM_COUNT) {
   return round % 2 === 1
-    ? (round - 1) * TEAM_COUNT + DRAFT_SLOT
-    : round * TEAM_COUNT - DRAFT_SLOT + 1;
+    ? (round - 1) * teamCount + draftSlot
+    : round * teamCount - draftSlot + 1;
 }
 
-export function nextAgentPick(currentPick: number) {
-  for (let round = draftRound(currentPick); round <= TOTAL_ROUNDS; round += 1) {
-    const pick = agentPickInRound(round);
+export function nextAgentPick(currentPick: number, draftSlot = DEFAULT_DRAFT_SLOT, totalRounds = DEFAULT_TOTAL_ROUNDS, teamCount = DEFAULT_TEAM_COUNT) {
+  for (let round = draftRound(currentPick, teamCount); round <= totalRounds; round += 1) {
+    const pick = agentPickInRound(round, draftSlot, teamCount);
     if (pick >= currentPick) return pick;
   }
   return null;
@@ -106,18 +121,18 @@ export function nextAgentPick(currentPick: number) {
 
 function positionCounts(keys: string[]) {
   return keys.reduce<Record<Position, number>>((counts, key) => {
-    const player = DEMO_PLAYERS.find((candidate) => candidate.key === key);
+    const player = DRAFT_PLAYERS.find((candidate) => candidate.key === key);
     if (player) counts[player.position] += 1;
     return counts;
   }, { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 });
 }
 
-function replacementPoints(position: Position, available: DraftPlayer[], state: DraftState) {
+function replacementPoints(position: Position, available: DraftPlayer[], state: DraftState, teamCount: number) {
   const pool = available.filter((player) => player.position === position).sort((a, b) => b.projectedPoints - a.projectedPoints);
   if (!pool.length) return 0;
   const starterShare = (slots[position] ?? 0) + (slots.FLEX ?? 0) * (flexShares[position] ?? 0);
-  const alreadyDrafted = state.history.filter((item) => DEMO_PLAYERS.find((player) => player.key === item.playerKey)?.position === position).length;
-  const outstandingDemand = Math.max(1, Math.ceil(starterShare * TEAM_COUNT) - alreadyDrafted);
+  const alreadyDrafted = state.history.filter((item) => DRAFT_PLAYERS.find((player) => player.key === item.playerKey)?.position === position).length;
+  const outstandingDemand = Math.max(1, Math.ceil(starterShare * teamCount) - alreadyDrafted);
   return pool[Math.min(pool.length - 1, outstandingDemand - 1)].projectedPoints;
 }
 
@@ -139,20 +154,23 @@ function phaseWeights(round: number) {
 
 export function rankBoard(state: DraftState, league?: DraftLeagueConfig): RankedPlayer[] {
   const drafted = new Set(state.history.map((item) => item.playerKey));
-  const available = DEMO_PLAYERS.filter((player) => !drafted.has(player.key));
-  const round = draftRound(state.currentPick);
-  const nextPick = nextAgentPick(state.currentPick) ?? state.currentPick;
+  const available = DRAFT_PLAYERS.filter((player) => !drafted.has(player.key));
+  const teamCount = state.teamCount ?? DEFAULT_TEAM_COUNT;
+  const totalRounds = state.totalRounds ?? DEFAULT_TOTAL_ROUNDS;
+  const draftSlot = state.draftSlot ?? DEFAULT_DRAFT_SLOT;
+  const round = draftRound(state.currentPick, teamCount);
+  const nextPick = nextAgentPick(state.currentPick, draftSlot, totalRounds, teamCount) ?? state.currentPick;
   const roster = positionCounts(state.roster);
-  const eligible = available.filter((player) => !(['K', 'DEF'].includes(player.position) && round < TOTAL_ROUNDS - 1));
+  const eligible = available.filter((player) => !(['K', 'DEF'].includes(player.position) && round < totalRounds - 1));
 
   return eligible.map<RankedPlayer>((player) => {
     const sameTier = eligible.filter((candidate) => candidate.position === player.position && candidate.tier === player.tier).length;
     const sameBye = state.roster.filter((key) => {
-      const rostered = DEMO_PLAYERS.find((candidate) => candidate.key === key);
+      const rostered = DRAFT_PLAYERS.find((candidate) => candidate.key === key);
       return rostered?.position === player.position && rostered.bye === player.bye;
     }).length;
     const components: ScoreComponents = {
-      replacement: clamp((player.projectedPoints - replacementPoints(player.position, eligible, state)) / 80 * 100),
+      replacement: clamp((player.projectedPoints - replacementPoints(player.position, eligible, state, teamCount)) / 80 * 100),
       rosterFit: rosterFit(player.position, roster),
       scarcity: sameTier === 1 ? 92 : sameTier === 2 ? 72 : sameTier <= 4 ? 55 : 38,
       adpValue: clamp(50 + (state.currentPick - player.adp) * 3.5),
@@ -164,7 +182,11 @@ export function rankBoard(state: DraftState, league?: DraftLeagueConfig): Ranked
     const weights = phaseWeights(round);
     let score = Object.entries(weights).reduce((total, [key, weight]) => total + components[key as keyof ScoreComponents] * weight, 0);
     if (player.position === 'QB' && roster.QB >= 1 && round < 9) score -= 18;
+    if (player.position === 'QB' && roster.QB >= 2) score -= 45;
     if (player.position === 'TE' && roster.TE >= 1 && round < 9) score -= 12;
+    if (player.position === 'TE' && roster.TE >= 2) score -= 32;
+    if (player.position === 'K' && roster.K >= 1) score -= 70;
+    if (player.position === 'DEF' && roster.DEF >= 1) score -= 70;
     if (player.tier === 1 && ['QB', 'TE'].includes(player.position)) score += 4;
     if (league?.receptionsPerReception === 1) {
       if (player.position === 'WR') score += 3.5;
@@ -173,6 +195,8 @@ export function rankBoard(state: DraftState, league?: DraftLeagueConfig): Ranked
     }
     if ((league?.longTouchdownBonus ?? 0) > 0) score += player.ceiling * 2.5;
     if (player.position === 'QB' && (league?.interceptionPenalty ?? 0) <= -2) score -= player.risk * 4;
+    const yahooValue = player.yahooRank > 0 ? player.yahooRank - player.adp : 0;
+    if (yahooValue >= 15) score += Math.min(7, yahooValue * .12);
 
     const labels: Array<[string, number]> = [
       ['replacement-level advantage', components.replacement],
@@ -190,7 +214,8 @@ export function rankBoard(state: DraftState, league?: DraftLeagueConfig): Ranked
       : (league?.longTouchdownBonus ?? 0) > 0
         ? ' 40+ yard touchdown bonuses are included.'
         : '';
-    return { ...player, score: Math.round(clamp(score) * 10) / 10, components, rationale: `Best available value, led by ${strongest.join(', ')}.${scoringNote}` };
+    const roomNote = yahooValue >= 20 ? ` Yahoo currently buries him ${yahooValue} spots below this PPR board.` : '';
+    return { ...player, score: Math.round(clamp(score) * 10) / 10, components, rationale: `Best available value, led by ${strongest.join(', ')}.${scoringNote}${roomNote}` };
   }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 }
 
@@ -198,3 +223,4 @@ export function confidence(board: RankedPlayer[]) {
   const margin = board[0] && board[1] ? board[0].score - board[1].score : 10;
   return Math.round(Math.min(95, Math.max(58, 72 + margin)));
 }
+

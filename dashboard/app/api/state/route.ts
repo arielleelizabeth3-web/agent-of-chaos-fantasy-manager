@@ -63,7 +63,11 @@ function isDraftState(value: unknown): value is DraftState {
   if (!value || typeof value !== 'object') return false;
   const state = value as DraftState;
   return Number.isInteger(state.currentPick) && state.currentPick > 0 && state.currentPick <= 500
+    && (state.draftSlot === undefined || Number.isInteger(state.draftSlot) && state.draftSlot >= 1 && state.draftSlot <= 32)
+    && (state.teamCount === undefined || Number.isInteger(state.teamCount) && state.teamCount >= 2 && state.teamCount <= 32)
+    && (state.totalRounds === undefined || Number.isInteger(state.totalRounds) && state.totalRounds >= 1 && state.totalRounds <= 40)
     && Array.isArray(state.roster) && state.roster.every((item) => typeof item === 'string')
     && Array.isArray(state.history) && state.history.every((item) => item && typeof item.playerKey === 'string'
       && Number.isInteger(item.pick) && (item.manager === 'agent' || item.manager === 'league'));
 }
+

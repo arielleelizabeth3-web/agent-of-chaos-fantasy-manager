@@ -4,13 +4,16 @@ import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import {
   confidence,
-  DEMO_PLAYERS,
+  DEFAULT_DRAFT_SLOT,
+  DRAFT_PLAYERS,
   draftRound,
   DraftState,
   newDraftState,
   nextAgentPick,
+  normalizePlayerName,
   rankBoard,
 } from './lib/draft';
+import { DRAFT_BOARD_SOURCE, DRAFT_BOARD_UPDATED } from './data/draft-board';
 import {
   BridgePlayer,
   BridgeTeamState,
@@ -61,14 +64,14 @@ const navItems: Array<{ view: View; icon: string; label: string }> = [
 const initialDrafts: Record<Team, DraftState> = { family: newDraftState(), friends: newDraftState() };
 const initialSettings: Record<Team, TeamSettings> = {
   family: { leagueId: '186731', yahooTeamKey: '', lineupReview: true, waiverWatch: true, weeklyReport: true },
-  friends: { leagueId: '', yahooTeamKey: '', lineupReview: true, waiverWatch: true, weeklyReport: true },
+  friends: { leagueId: '662011', yahooTeamKey: '', lineupReview: true, waiverWatch: true, weeklyReport: true },
 };
 const initialBridge: Record<Team, BridgeTeamState> = {
   family: { roster: [], waivers: [] }, friends: { roster: [], waivers: [] },
 };
 
 export default function Home() {
-  const [team, setTeam] = useState<Team>('family');
+  const [team, setTeam] = useState<Team>('friends');
   const [view, setView] = useState<View>('draft');
   const [drafts, setDrafts] = useState(initialDrafts);
   const [loaded, setLoaded] = useState(false);
@@ -77,6 +80,8 @@ export default function Home() {
   const [seconds, setSeconds] = useState(77);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
+  const [showSync, setShowSync] = useState(false);
+  const [syncText, setSyncText] = useState('');
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading');
   const [cloudSyncEnabled, setCloudSyncEnabled] = useState(true);
   const [settings, setSettings] = useState(initialSettings);
@@ -95,11 +100,14 @@ export default function Home() {
     interceptionPenalty: ruleValue(profile, 'interceptions'),
   }), [draft, profile]);
   const recommendation = board[0];
-  const nextPick = nextAgentPick(draft.currentPick);
+  const configuredRounds = draft.totalRounds ?? profile.roster.slots.length + profile.roster.bench;
+  const configuredTeams = draft.teamCount ?? profile.teamCount;
+  const configuredSlot = draft.draftSlot ?? DEFAULT_DRAFT_SLOT;
+  const nextPick = nextAgentPick(draft.currentPick, configuredSlot, configuredRounds, configuredTeams);
   const onClock = nextPick === draft.currentPick;
-  const currentRound = draftRound(draft.currentPick);
-  const roster = draft.roster.map((key) => DEMO_PLAYERS.find((player) => player.key === key)).filter(Boolean);
-  const availablePlayers = DEMO_PLAYERS.filter((player) => !draft.history.some((item) => item.playerKey === player.key));
+  const currentRound = draftRound(draft.currentPick, configuredTeams);
+  const roster = draft.roster.map((key) => DRAFT_PLAYERS.find((player) => player.key === key)).filter(Boolean);
+  const availablePlayers = DRAFT_PLAYERS.filter((player) => !draft.history.some((item) => item.playerKey === player.key));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -113,17 +121,28 @@ export default function Home() {
       fetch('/api/league', { signal: controller.signal }).then((response) => response.json() as Promise<LeaguePayload>),
       fetch('/api/bridge', { signal: controller.signal }).then((response) => response.json() as Promise<BridgePayload>),
     ]).then(([stateData, settingsData, yahooData, leagueData, bridgeData]) => {
-      setDrafts(stateData.drafts ?? initialDrafts);
+      const nextProfiles = leagueData.profiles ?? DEFAULT_PROFILES;
+      const nextDrafts = stateData.drafts ?? initialDrafts;
+      setDrafts({
+        family: hydrateDraftState(nextDrafts.family, nextProfiles.family),
+        friends: hydrateDraftState(nextDrafts.friends, nextProfiles.friends),
+      });
       setSettings(settingsData.settings ?? initialSettings);
       setYahooStatus(yahooData);
-      setProfiles(leagueData.profiles ?? DEFAULT_PROFILES);
+      setProfiles(nextProfiles);
       setBridge(bridgeData.bridge ?? initialBridge);
       setUserName(stateData.user?.displayName ?? stateData.user?.email ?? 'Private manager');
       setSyncStatus('synced');
     }).catch(() => {
       try {
         const saved = localStorage.getItem('agent-of-chaos-draft-state');
-        if (saved) setDrafts(JSON.parse(saved));
+        if (saved) {
+          const localDrafts = JSON.parse(saved) as Record<Team, DraftState>;
+          setDrafts({
+            family: hydrateDraftState(localDrafts.family, DEFAULT_PROFILES.family),
+            friends: hydrateDraftState(localDrafts.friends, DEFAULT_PROFILES.friends),
+          });
+        }
       } catch { /* Keep safe demo defaults. */ }
       setSyncStatus('local');
       setCloudSyncEnabled(false);
@@ -171,14 +190,14 @@ export default function Home() {
     if (!onClock) return;
     let timer: number | undefined;
     const reset = window.setTimeout(() => {
-      setSeconds(90);
+      setSeconds(profile.draft.secondsPerPick);
       timer = window.setInterval(() => setSeconds((value) => Math.max(0, value - 1)), 1000);
     }, 0);
     return () => {
       window.clearTimeout(reset);
       if (timer) window.clearInterval(timer);
     };
-  }, [team, onClock, draft.currentPick]);
+  }, [team, onClock, draft.currentPick, profile.draft.secondsPerPick]);
 
   useEffect(() => {
     if (!notice) return;
@@ -193,6 +212,7 @@ export default function Home() {
       return {
         ...current,
         [team]: {
+          ...state,
           currentPick: state.currentPick + 1,
           roster: manager === 'agent' ? [...state.roster, playerKey] : state.roster,
           history: [...state.history, { playerKey, pick: state.currentPick, manager }],
@@ -204,16 +224,40 @@ export default function Home() {
     setNotice(manager === 'agent' ? 'Agent pick added to the roster.' : 'League pick recorded. Board recalculated.');
   }
 
-  function recordLeaguePick() {
-    const normalized = query.trim().toLowerCase();
-    const exact = availablePlayers.find((player) => player.name.toLowerCase() === normalized);
-    const partial = availablePlayers.filter((player) => player.name.toLowerCase().includes(normalized));
-    const selected = exact ?? (partial.length === 1 ? partial[0] : undefined);
+  function selectedPlayer(value: string) {
+    const normalized = normalizePlayerName(value);
+    const exact = availablePlayers.find((player) => normalizePlayerName(player.name) === normalized);
+    const partial = availablePlayers.filter((player) => normalizePlayerName(player.name).includes(normalized) || normalized.includes(normalizePlayerName(player.name)));
+    return exact ?? (partial.length === 1 ? partial[0] : undefined);
+  }
+
+  function recordPick(manager: 'agent' | 'league') {
+    const selected = selectedPlayer(query);
     if (!selected) {
-      setNotice(normalized ? 'Choose one available player from the suggestions.' : 'Enter the player who was drafted.');
+      setNotice(query.trim() ? 'Choose one available player from the suggestions.' : 'Enter the player who was drafted.');
       return;
     }
-    applyPick(selected.key, 'league');
+    applyPick(selected.key, manager);
+  }
+
+  function syncMissedPicks() {
+    const alreadyDrafted = new Set(draft.history.map((item) => item.playerKey));
+    const matched = syncText.split(/\r?\n/).map((line) => line.replace(/^\s*#?\d+[.)-]?\s*/, '').trim())
+      .map((line) => selectedPlayer(line)).filter((player): player is (typeof DRAFT_PLAYERS)[number] => Boolean(player))
+      .filter((player, index, all) => !alreadyDrafted.has(player.key) && all.findIndex((candidate) => candidate.key === player.key) === index);
+    if (!matched.length) {
+      setNotice('No new player names were matched. Paste one drafted player per line.');
+      return;
+    }
+    setDrafts((current) => {
+      const state = current[team];
+      let pick = state.currentPick;
+      const additions = matched.map((player) => ({ playerKey: player.key, pick: pick++, manager: 'league' as const }));
+      return { ...current, [team]: { ...state, currentPick: pick, history: [...state.history, ...additions] } };
+    });
+    setSyncText('');
+    setShowSync(false);
+    setNotice(`${matched.length} missed picks synced. Board recalculated.`);
   }
 
   function undoLastPick() {
@@ -222,6 +266,7 @@ export default function Home() {
     setDrafts((current) => ({
       ...current,
       [team]: {
+        ...current[team],
         currentPick: last.pick,
         roster: last.manager === 'agent' ? current[team].roster.filter((key) => key !== last.playerKey) : current[team].roster,
         history: current[team].history.slice(0, -1),
@@ -231,9 +276,13 @@ export default function Home() {
   }
 
   function resetDraft() {
-    if (!window.confirm(`Reset the ${activeTeam.label} demo draft?`)) return;
-    setDrafts((current) => ({ ...current, [team]: newDraftState() }));
-    setNotice('Demo draft reset.');
+    if (!window.confirm(`Clear every recorded ${activeTeam.label} draft pick and start at pick 1?`)) return;
+    setDrafts((current) => ({ ...current, [team]: newDraftState(configuredSlot, profile.roster.slots.length + profile.roster.bench) }));
+    setNotice('Live draft board cleared and ready at pick 1.');
+  }
+
+  function configureDraft(patch: Partial<DraftState>) {
+    setDrafts((current) => ({ ...current, [team]: { ...current[team], ...patch } }));
   }
 
   function updateTeamSettings(patch: Partial<TeamSettings>) {
@@ -303,17 +352,29 @@ export default function Home() {
               <div className={`pick-clock ${onClock ? 'live' : ''}`}><span>{onClock ? 'On the clock' : 'Next Agent pick'}</span><strong>{onClock ? clockText : `#${nextPick ?? '—'}`}</strong></div>
             </div>
 
-            <div className="demo-banner"><span>{profile.imported ? 'League-aware brain' : 'Demo player board'}</span><p>{profile.imported ? `${profile.leagueName} scoring and roster construction are active. The sample names remain fictional until a projection board is imported.` : 'Interactions and scoring are live. Import this league’s settings to tune the decision engine.'}</p><button type="button" onClick={resetDraft}>Reset demo</button></div>
+            <div className="draft-night-banner"><span className="live-indicator" /> <strong>Browser bridge ready</strong><p>Share the Yahoo draft tab with Codex tonight. I’ll read picks directly and keep this board synchronized.</p></div>
+
+            <div className="draft-setup-bar">
+              <label>Agent draft slot<select value={configuredSlot} onChange={(event) => configureDraft({ draftSlot: Number(event.target.value) })}>{Array.from({ length: configuredTeams }, (_, index) => <option key={index + 1} value={index + 1}>#{index + 1}</option>)}</select></label>
+              <label>Current overall pick<input type="number" min="1" max={configuredTeams * configuredRounds} value={draft.currentPick} onChange={(event) => configureDraft({ currentPick: Math.max(1, Math.min(configuredTeams * configuredRounds, Number(event.target.value) || 1)) })} /></label>
+              <div><span>Format</span><strong>{configuredTeams} teams · {configuredRounds} rounds · {profile.draft.secondsPerPick}s</strong></div>
+              <button type="button" onClick={resetDraft}>{draft.history.length ? 'Clear & restart' : 'Start at pick 1'}</button>
+            </div>
+
+            <div className="demo-banner"><span>Live 2026 board</span><p>{DRAFT_PLAYERS.length} real players · {DRAFT_BOARD_SOURCE} · refreshed {DRAFT_BOARD_UPDATED}. {profile.leagueName} scoring and roster construction are active.</p><button type="button" onClick={() => setShowSync((value) => !value)}>{showSync ? 'Close recovery' : 'Missed picks?'}</button></div>
 
             <div className="draft-grid">
               <div className="primary-column">
+                {showSync && <section className="batch-sync-panel"><div><span className="step-number">Recovery</span><h3>Catch up missed opponent picks</h3><p>Paste one player name per line. Agent selections should still be recorded separately.</p></div><textarea value={syncText} onChange={(event) => setSyncText(event.target.value)} rows={4} placeholder={'Josh Allen\nPuka Nacua\nBreece Hall'} /><div><button type="button" className="primary-action" onClick={syncMissedPicks}>Sync names</button><button type="button" className="secondary-action" onClick={() => { setShowSync(false); setSyncText(''); }}>Cancel</button></div></section>}
+
                 <section className={`record-pick-panel ${onClock ? 'waiting' : ''}`}>
-                  <div><span className="step-number">01</span><div><h3>{onClock ? 'Agent of Chaos is picking' : 'Record the latest league pick'}</h3><p>{onClock ? 'Confirm the recommendation below.' : 'Tell the brain who just left the board.'}</p></div></div>
+                  <div><span className="step-number">01</span><div><h3>{onClock ? 'Agent of Chaos is on the clock' : 'Record the latest Yahoo pick'}</h3><p>{onClock ? 'Use the recommendation below—or record the player actually selected.' : 'Mark each player off as Yahoo announces the pick.'}</p></div></div>
                   <div className="pick-input-row">
                     <label className="sr-only" htmlFor="drafted-player">Player just drafted</label>
-                    <input id="drafted-player" list="available-players" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && recordLeaguePick()} placeholder={onClock ? 'Waiting for Agent pick…' : 'Search a player name…'} disabled={onClock} />
-                    <datalist id="available-players">{availablePlayers.map((player) => <option key={player.key} value={player.name}>{player.position} · {player.proTeam}</option>)}</datalist>
-                    <button type="button" onClick={recordLeaguePick} disabled={onClock}>Record pick</button>
+                    <input id="drafted-player" list="available-players" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && recordPick(onClock ? 'agent' : 'league')} placeholder="Search any available player…" />
+                    <datalist id="available-players">{availablePlayers.map((player) => <option key={player.key} value={player.name}>{player.position} · {player.proTeam} · PPR #{player.adp}</option>)}</datalist>
+                    <button type="button" onClick={() => recordPick('league')}>Taken</button>
+                    <button type="button" className="agent-pick-button" onClick={() => recordPick('agent')}>Agent pick</button>
                   </div>
                 </section>
 
@@ -321,7 +382,7 @@ export default function Home() {
                   <section className="recommendation-card">
                     <div className="recommendation-topline"><div className="recommendation-label"><span className="chaos-spark">✦</span>Agent recommendation</div><span className="confidence">{confidence(board)}% confidence</span></div>
                     <div className="player-hero">
-                      <div><span className="position-chip">{recommendation.position} · {recommendation.proTeam} · Tier {recommendation.tier}</span><h3>{recommendation.name}</h3><p>{recommendation.rationale}</p></div>
+                      <div><span className="position-chip">{recommendation.position} · {recommendation.proTeam} · Tier {recommendation.tier} · PPR #{recommendation.adp}{recommendation.yahooRank ? ` · Yahoo #${recommendation.yahooRank}` : ''}</span><h3>{recommendation.name}</h3><p>{recommendation.rationale}</p></div>
                       <div className="chaos-score"><span>Chaos score</span><strong>{recommendation.score.toFixed(1)}</strong></div>
                     </div>
                     <div className="metrics-grid">
@@ -343,7 +404,7 @@ export default function Home() {
                 <section className="round-card"><div><span>Round</span><strong>{String(currentRound).padStart(2, '0')}</strong></div><div><span>Current pick</span><strong>{draft.currentPick}</strong></div><div><span>Next pick</span><strong>{nextPick ?? '—'}</strong></div></section>
                 <section className="alternatives-card">
                   <div className="section-title-row"><div><span className="eyebrow">Contingency board</span><h3>Next best options</h3></div><button type="button" onClick={() => setShowBoard((value) => !value)} aria-label="Toggle complete rankings">{showBoard ? '×' : '↗'}</button></div>
-                  <ol>{board.slice(1, showBoard ? 12 : 4).map((player, index) => <li key={player.key}><span className="alt-rank">{String(index + 2).padStart(2, '0')}</span><div><strong>{player.name}</strong><span>{player.position} · {player.proTeam} · Tier {player.tier}</span></div><b>{player.score.toFixed(1)}</b></li>)}</ol>
+                  <ol>{board.slice(1, showBoard ? 18 : 4).map((player, index) => <li key={player.key}><span className="alt-rank">{String(index + 2).padStart(2, '0')}</span><div><strong>{player.name}</strong><span>{player.position} · {player.proTeam} · PPR #{player.adp}{player.yahooRank ? ` · Y! ${player.yahooRank}` : ''}</span></div><b>{player.score.toFixed(1)}</b></li>)}</ol>
                 </section>
                 <section className="insight-card"><span className="insight-kicker">Board intelligence</span><p><strong>{positionRun} {recommendation?.position}s</strong> appear in the current top ten.</p><div className="run-meter"><span style={{ width: `${Math.max(20, positionRun * 10)}%` }} /></div><small>{recommendation?.position} pressure · {positionRun >= 4 ? 'High' : positionRun >= 2 ? 'Moderate' : 'Low'}</small></section>
                 <div className="draft-controls"><button type="button" onClick={undoLastPick} disabled={!draft.history.length}>Undo last pick</button><span>{draft.history.length} picks recorded</span></div>
@@ -366,12 +427,12 @@ export default function Home() {
   );
 }
 
-function RosterView({ roster, teamName }: { roster: Array<(typeof DEMO_PLAYERS)[number] | undefined>; teamName: string }) {
-  return <section className="module-page"><p className="eyebrow accent-text">{teamName}</p><h2>Drafted roster</h2><p className="module-subtitle">Agent selections appear here immediately and stay isolated from the other league.</p><div className="roster-grid">{roster.length ? roster.map((player, index) => player && <article className="roster-player" key={player.key}><span>{String(index + 1).padStart(2, '0')}</span><div><b>{player.name}</b><small>{player.position} · {player.proTeam} · Bye {player.bye}</small></div><strong>{player.projectedPoints}</strong></article>) : <div className="empty-state"><span>R</span><h3>No picks yet</h3><p>Confirm an Agent recommendation in the Draft Room to start building this roster.</p></div>}</div></section>;
+function RosterView({ roster, teamName }: { roster: Array<(typeof DRAFT_PLAYERS)[number] | undefined>; teamName: string }) {
+  return <section className="module-page"><p className="eyebrow accent-text">{teamName}</p><h2>Drafted roster</h2><p className="module-subtitle">Agent selections appear here immediately and stay isolated from the other league.</p><div className="roster-grid">{roster.length ? roster.map((player, index) => player && <article className="roster-player" key={player.key}><span>{String(index + 1).padStart(2, '0')}</span><div><b>{player.name}</b><small>{player.position} · {player.proTeam} · Bye {player.bye}</small></div><strong>PPR #{player.adp}</strong></article>) : <div className="empty-state"><span>R</span><h3>No picks yet</h3><p>Confirm an Agent recommendation in the Draft Room to start building this roster.</p></div>}</div></section>;
 }
 
 function AuditView({ draft }: { draft: DraftState }) {
-  return <section className="module-page"><p className="eyebrow accent-text">Decision history</p><h2>Audit log</h2><p className="module-subtitle">Every recorded action is saved to your private command center and available across devices.</p><div className="audit-list">{draft.history.length ? [...draft.history].reverse().map((item) => { const player = DEMO_PLAYERS.find((candidate) => candidate.key === item.playerKey); return <article key={`${item.pick}-${item.playerKey}`}><span>Pick {item.pick}</span><div><b>{player?.name}</b><small>{player?.position} · {item.manager === 'agent' ? 'Agent of Chaos' : 'League manager'}</small></div><em>{item.manager === 'agent' ? 'Agent pick' : 'Board update'}</em></article>; }) : <div className="empty-state"><span>A</span><h3>No decisions recorded</h3><p>The log will populate as the draft progresses.</p></div>}</div></section>;
+  return <section className="module-page"><p className="eyebrow accent-text">Decision history</p><h2>Audit log</h2><p className="module-subtitle">Every recorded action is saved to your private command center and available across devices.</p><div className="audit-list">{draft.history.length ? [...draft.history].reverse().map((item) => { const player = DRAFT_PLAYERS.find((candidate) => candidate.key === item.playerKey); return <article key={`${item.pick}-${item.playerKey}`}><span>Pick {item.pick}</span><div><b>{player?.name}</b><small>{player?.position} · {item.manager === 'agent' ? 'Agent of Chaos' : 'League manager'}</small></div><em>{item.manager === 'agent' ? 'Agent pick' : 'Board update'}</em></article>; }) : <div className="empty-state"><span>A</span><h3>No decisions recorded</h3><p>The log will populate as the draft progresses.</p></div>}</div></section>;
 }
 
 function SettingsView({ teamName, values, yahoo, onChange, onSave }: {
@@ -420,6 +481,21 @@ function syncLabel(status: SyncStatus) {
   if (status === 'local') return 'Local preview';
   if (status === 'error') return 'Sync needs attention';
   return 'Connecting…';
+}
+
+function hydrateDraftState(state: DraftState | undefined, profile: LeagueProfile) {
+  const totalRounds = profile.roster.slots.length + profile.roster.bench;
+  if (!state) return newDraftState(DEFAULT_DRAFT_SLOT, totalRounds);
+  const knownHistory = state.history.filter((item) => DRAFT_PLAYERS.some((player) => player.key === item.playerKey));
+  const hasLegacyBoard = knownHistory.length !== state.history.length;
+  if (hasLegacyBoard) return newDraftState(state.draftSlot ?? DEFAULT_DRAFT_SLOT, totalRounds);
+  return {
+    ...state,
+    currentPick: state.draftSlot === undefined && !state.history.length ? 1 : state.currentPick,
+    draftSlot: state.draftSlot ?? DEFAULT_DRAFT_SLOT,
+    teamCount: state.teamCount ?? profile.teamCount,
+    totalRounds: state.totalRounds ?? totalRounds,
+  };
 }
 
 function LineupView({ profile, state, onChange }: { profile: LeagueProfile; state: BridgeTeamState; onChange: (state: BridgeTeamState) => void }) {
@@ -512,3 +588,4 @@ function optimizeLineup(players: BridgePlayer[]) {
 function ruleValue(profile: LeagueProfile, key: string) {
   return [...profile.scoring.offense, ...profile.scoring.kicking, ...profile.scoring.defense].find((rule) => rule.key === key)?.value ?? 0;
 }
+
